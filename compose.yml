@@ -1,0 +1,11 @@
+services:
+  github-org-repos-fetcher:
+    container_name: github-org-repos-fetcher
+    build: .
+    environment:
+      - ORGANIZATION_NAME=${ORGANIZATION_NAME}
+      - ACCESS_TOKEN=${ACCESS_TOKEN}
+      - LOCAL_REPOSITORIES_DIR=/repos
+      - IGNORE_LIST=${IGNORE_LIST}
+    volumes:
+      - ./repos:/repos
