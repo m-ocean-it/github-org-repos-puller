@@ -1,6 +1,6 @@
 package main
 
-type SchemaJson []Entry
+type ResponseEntries []Entry
 
 type Entry struct {
 	Name    string `json:"name"`

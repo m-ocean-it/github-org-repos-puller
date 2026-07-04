@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"math/rand/v2"
 	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -76,28 +78,49 @@ func run() {
 		log.Fatalf("Could not create an API URL for fetching organization repositories list: %v", err)
 	}
 
-	req, err := http.NewRequest("GET", fullURL, nil)
-	if err != nil {
-		log.Fatalf("Could not create a request for organization repositories list: %v", err)
+	var entries ResponseEntries
+	for page := 1; ; page++ {
+		req, err := http.NewRequest("GET", fullURL, nil)
+		if err != nil {
+			log.Fatalf("Could not create a request for organization repositories list: %v", err)
+		}
+
+		query := req.URL.Query()
+		query.Add("page", strconv.Itoa(page))
+		req.URL.RawQuery = query.Encode()
+
+		req.Header.Add("Accept", "application/vnd.github+json")
+		req.Header.Add("Authorization", "Bearer "+bearerToken)
+		req.Header.Add("X-GitHub-Api-Version", "2026-03-10")
+
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Fatalf("Could not request organization repositories list: %v", err)
+		}
+		defer resp.Body.Close()
+
+		var respEntries ResponseEntries
+		err = json.NewDecoder(resp.Body).Decode(&respEntries)
+		if err != nil {
+			log.Fatalf("Could not JSON-decode a list of organization repositories from API: %v", err)
+		}
+
+		log.Printf("Received a list of %d repositories", len(respEntries))
+
+		if len(respEntries) == 0 {
+			log.Printf("Last page read")
+
+			break
+		}
+
+		entries = append(entries, respEntries...)
 	}
 
-	req.Header.Add("Accept", "application/vnd.github+json")
-	req.Header.Add("Authorization", "Bearer "+bearerToken)
-	req.Header.Add("X-GitHub-Api-Version", "2026-03-10")
+	rand.Shuffle(len(entries), func(a, b int) {
+		entries[a], entries[b] = entries[b], entries[a]
+	})
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		log.Fatalf("Could not request organization repositories list: %v", err)
-	}
-	defer resp.Body.Close()
-
-	var parsedResp SchemaJson
-	err = json.NewDecoder(resp.Body).Decode(&parsedResp)
-	if err != nil {
-		log.Fatalf("Could not JSON-decode a list of organization repositories from API: %v", err)
-	}
-
-	log.Printf("Fetched a list of %d repositories", len(parsedResp))
+	log.Printf("Fetched info of %d repositories in total", len(entries))
 
 	eg := errgroup.Group{}
 	eg.SetLimit(8) // TODO(mmotyshen): get from config.
@@ -105,7 +128,7 @@ func run() {
 	var failedRepos []string
 	var failedReposMx sync.Mutex
 
-	for _, itm := range parsedResp {
+	for _, itm := range entries {
 		if slices.Contains(ignoreList, itm.Name) {
 			log.Printf("Skipping %q because it is in the ignore-list", itm.Name)
 
@@ -164,13 +187,13 @@ func run() {
 	}
 
 	if len(failedRepos) == 0 {
-		log.Printf("Cycle finished. All %d repositories cloned/pulled/ignored successfully.", len(parsedResp))
+		log.Printf("Cycle finished. All %d repositories cloned/pulled/ignored successfully.", len(entries))
 
 		if successPingURL != "" {
 			http.Get(successPingURL)
 		}
 	} else {
-		log.Printf("Cycle finished. %d of %d repositories were not processed succesfully:\n  - %s", len(failedRepos), len(parsedResp), strings.Join(failedRepos, ",\n  - "))
+		log.Printf("Cycle finished. %d of %d repositories were not processed succesfully:\n  - %s", len(failedRepos), len(entries), strings.Join(failedRepos, ",\n  - "))
 	}
 
 }
