@@ -29,6 +29,7 @@ func main() {
 	log.Printf("Using an interval of %s", tickPeriod)
 
 	run()
+	log.Printf("Sleeping for %s", tickPeriod)
 	for range time.Tick(tickPeriod) {
 		run()
 		log.Printf("Sleeping for %s", tickPeriod)
@@ -63,6 +64,11 @@ func run() {
 	}
 	if len(ignoreList) > 0 {
 		log.Printf("Ignore-list contains %d entries: %s", len(ignoreList), strings.Join(ignoreList, ", "))
+	}
+
+	successPingURL := os.Getenv("SUCCESS_PING_URL")
+	if successPingURL != "" {
+		log.Printf("Success will be pinged to %q", successPingURL)
 	}
 
 	fullURL, err := url.JoinPath(apiAddress, fmt.Sprintf(reposEndpointTemplate, organizationName))
@@ -159,6 +165,10 @@ func run() {
 
 	if len(failedRepos) == 0 {
 		log.Printf("Cycle finished. All %d repositories cloned/pulled/ignored successfully.", len(parsedResp))
+
+		if successPingURL != "" {
+			http.Get(successPingURL)
+		}
 	} else {
 		log.Printf("Cycle finished. %d of %d repositories were not processed succesfully:\n  - %s", len(failedRepos), len(parsedResp), strings.Join(failedRepos, ",\n  - "))
 	}

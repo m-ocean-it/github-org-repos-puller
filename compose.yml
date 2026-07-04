@@ -7,5 +7,6 @@ services:
       - ACCESS_TOKEN=${ACCESS_TOKEN}
       - LOCAL_REPOSITORIES_DIR=/repos
       - IGNORE_LIST=${IGNORE_LIST}
+      - SUCCESS_PING_URL=${SUCCESS_PING_URL}
     volumes:
       - ./repos:/repos
