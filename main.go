@@ -36,6 +36,8 @@ func main() {
 		run()
 
 		log.Printf("Sleeping for %s", interval)
+
+		time.Sleep(interval)
 	}
 }
 
