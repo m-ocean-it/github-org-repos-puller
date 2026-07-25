@@ -27,14 +27,15 @@ const (
 )
 
 func main() {
-	tickPeriod := time.Hour // TODO(mmotyshen): get from config.
-	log.Printf("Using an interval of %s", tickPeriod)
+	interval := time.Hour // TODO(mmotyshen): get from config.
+	log.Printf("Using an interval of %s between runs", interval)
 
-	run()
-	log.Printf("Sleeping for %s", tickPeriod)
-	for range time.Tick(tickPeriod) {
+	for {
+		log.Printf("Running the cycle")
+
 		run()
-		log.Printf("Sleeping for %s", tickPeriod)
+
+		log.Printf("Sleeping for %s", interval)
 	}
 }
 
