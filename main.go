@@ -181,25 +181,18 @@ func run(ctx context.Context) error {
 				return fmt.Errorf("Could not check if file path %q exists: %v", localRepoPath, err)
 			}
 
-			var cmd *exec.Cmd
 			var operation string
 
 			if localRepoPathExists {
-				cmd = exec.CommandContext(ctx, "git", "-C", localRepoPath, "pull")
+				err = runCmd(ctx, "git", "-C", localRepoPath, "pull")
 				operation = "git pull"
 			} else {
-				cmd = exec.CommandContext(ctx, "git", "clone", augmentedURL, localRepoPath)
+				err = runCmd(ctx, "git", "clone", augmentedURL, localRepoPath)
 				operation = "git clone"
 			}
 
-			_, err = cmd.Output()
 			if err != nil {
-				errMsg := "..."
-				if stdErr, ok := err.(*exec.ExitError); ok {
-					errMsg = strings.TrimSpace(string(stdErr.Stderr))
-				}
-
-				log.Printf("Could not run %q for repository %q: %v (%s)", operation, itm.Name, err, errMsg)
+				log.Printf("Could not run %q for repository %q: %s", operation, itm.Name, err)
 
 				failedReposMx.Lock()
 				failedRepos = append(failedRepos, itm.Name)
@@ -245,4 +238,20 @@ func pathExists(path string) (bool, error) {
 	}
 
 	return false, err
+}
+
+func runCmd(ctx context.Context, name string, args ...string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+
+	_, err := cmd.Output()
+	if err != nil {
+		errMsg := "..."
+		if stdErr, ok := err.(*exec.ExitError); ok {
+			errMsg = strings.TrimSpace(string(stdErr.Stderr))
+		}
+
+		return fmt.Errorf("Could not run command %q: %s (%s)", cmd.String(), err, errMsg)
+	}
+
+	return nil
 }
