@@ -220,7 +220,12 @@ func run(ctx context.Context) error {
 		log.Printf("Cycle finished. All %d repositories cloned/pulled/ignored successfully.", len(entries))
 
 		if successPingURL != "" {
-			http.Get(successPingURL)
+			resp, err := http.Get(successPingURL)
+			if err != nil {
+				log.Printf("Pinging about success failed: %s", err)
+			} else {
+				resp.Body.Close()
+			}
 		}
 	} else {
 		log.Printf("Cycle finished. %d of %d repositories were not processed succesfully:\n  - %s", len(failedRepos), len(entries), strings.Join(failedRepos, ",\n  - "))
