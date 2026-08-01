@@ -12,11 +12,13 @@ import (
 	"net/url"
 	"os"
 	"os/exec"
+	"os/signal"
 	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"golang.org/x/sync/errgroup"
@@ -28,12 +30,19 @@ const (
 )
 
 func main() {
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	interval := time.Hour // TODO(mmotyshen): get from config.
 	log.Printf("Using an interval of %s between runs", interval)
 
 	for {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			log.Printf("Breaking from the main loop due to context cancellation: %s", ctxErr)
+
+			break
+		}
+
 		log.Printf("Running the cycle")
 
 		err := run(ctx)
@@ -44,9 +53,14 @@ func main() {
 		}
 
 		log.Printf("Sleeping for %s", interval)
-
-		time.Sleep(interval)
+		select {
+		case <-ctx.Done():
+			continue
+		case <-time.After(interval):
+		}
 	}
+
+	log.Print("Process exits gracefully")
 }
 
 func run(ctx context.Context) error {
