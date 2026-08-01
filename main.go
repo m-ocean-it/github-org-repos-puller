@@ -184,10 +184,10 @@ func run(ctx context.Context) error {
 			var operation string
 
 			if localRepoPathExists {
-				err = runCmd(ctx, "git", "-C", localRepoPath, "pull")
-				operation = "git pull"
+				err = runGitFetchReset(ctx, localRepoPath)
+				operation = "git fetch+reset"
 			} else {
-				err = runCmd(ctx, "git", "clone", augmentedURL, localRepoPath)
+				err = runGitClone(ctx, augmentedURL, localRepoPath)
 				operation = "git clone"
 			}
 
@@ -240,18 +240,70 @@ func pathExists(path string) (bool, error) {
 	return false, err
 }
 
-func runCmd(ctx context.Context, name string, args ...string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+func runGitFetchReset(ctx context.Context, repoPath string) error {
+	branch, err := runCmd(ctx, runCmdSpec{
+		dir:  repoPath,
+		name: "git",
+		args: []string{"rev-parse", "--abbrev-ref", "HEAD"},
+	})
+	if err != nil {
+		return fmt.Errorf("resolve current branch: %w", err)
+	}
+	branch = strings.TrimSpace(branch)
 
-	_, err := cmd.Output()
+	_, err = runCmd(ctx, runCmdSpec{
+		dir:  repoPath,
+		name: "git",
+		args: []string{"fetch"},
+	})
+	if err != nil {
+		return fmt.Errorf("git fetch: %w", err)
+	}
+
+	_, err = runCmd(ctx, runCmdSpec{
+		dir:  repoPath,
+		name: "git",
+		args: []string{"reset", "--hard", "origin/" + branch},
+	})
+	if err != nil {
+		return fmt.Errorf("git reset: %w", err)
+	}
+
+	return nil
+}
+
+func runGitClone(ctx context.Context, url string, destination string) error {
+	_, err := runCmd(ctx, runCmdSpec{
+		name: "git",
+		args: []string{"clone", url, destination},
+	})
+
+	if err != nil {
+		return fmt.Errorf("git clone: %w", err)
+	}
+
+	return nil
+}
+
+type runCmdSpec struct {
+	dir  string
+	name string
+	args []string
+}
+
+func runCmd(ctx context.Context, spec runCmdSpec) (string, error) {
+	cmd := exec.CommandContext(ctx, spec.name, spec.args...)
+	cmd.Dir = spec.dir
+
+	out, err := cmd.Output()
 	if err != nil {
 		errMsg := "..."
 		if stdErr, ok := err.(*exec.ExitError); ok {
 			errMsg = strings.TrimSpace(string(stdErr.Stderr))
 		}
 
-		return fmt.Errorf("Could not run command %q: %s (%s)", cmd.String(), err, errMsg)
+		return "", fmt.Errorf("Could not run command %q: %s (%s)", cmd.String(), err, errMsg)
 	}
 
-	return nil
+	return string(out), nil
 }
