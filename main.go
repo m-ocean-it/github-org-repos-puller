@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -27,13 +28,20 @@ const (
 )
 
 func main() {
+	ctx := context.Background()
+
 	interval := time.Hour // TODO(mmotyshen): get from config.
 	log.Printf("Using an interval of %s between runs", interval)
 
 	for {
 		log.Printf("Running the cycle")
 
-		run()
+		err := run(ctx)
+		if err != nil {
+			log.Printf("Cycle errored: %s", err)
+		} else {
+			log.Printf("Cycle completed successfully")
+		}
 
 		log.Printf("Sleeping for %s", interval)
 
@@ -41,20 +49,20 @@ func main() {
 	}
 }
 
-func run() {
+func run(ctx context.Context) error {
 	organizationName := os.Getenv("ORGANIZATION_NAME")
 	if organizationName == "" {
-		log.Fatal("Organization name unknown") // TODO(mmotyshen): hint to solution.
+		return fmt.Errorf("Organization name unknown") // TODO(mmotyshen): hint to solution.
 	}
 
 	bearerToken := os.Getenv("ACCESS_TOKEN")
 	if bearerToken == "" {
-		log.Fatal("Access token unknown") // TODO(mmotyshen): hint to solution.
+		return fmt.Errorf("Access token unknown") // TODO(mmotyshen): hint to solution.
 	}
 
 	storageLocation := os.Getenv("LOCAL_REPOSITORIES_DIR")
 	if storageLocation == "" {
-		log.Fatal("Local repositories directory unknown") // TODO(mmotyshen): hint to solution.
+		return fmt.Errorf("Local repositories directory unknown") // TODO(mmotyshen): hint to solution.
 	}
 
 	ignoreListRaw := os.Getenv("IGNORE_LIST")
@@ -78,14 +86,14 @@ func run() {
 
 	fullURL, err := url.JoinPath(apiAddress, fmt.Sprintf(reposEndpointTemplate, organizationName))
 	if err != nil {
-		log.Fatalf("Could not create an API URL for fetching organization repositories list: %v", err)
+		return fmt.Errorf("Could not create an API URL for fetching organization repositories list: %v", err)
 	}
 
 	var entries ResponseEntries
 	for page := 1; ; page++ {
 		req, err := http.NewRequest("GET", fullURL, nil)
 		if err != nil {
-			log.Fatalf("Could not create a request for organization repositories list: %v", err)
+			return fmt.Errorf("Could not create a request for organization repositories list: %v", err)
 		}
 
 		query := req.URL.Query()
@@ -98,16 +106,17 @@ func run() {
 
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
-			log.Fatalf("Could not request organization repositories list: %v", err)
+			return fmt.Errorf("Could not request organization repositories list: %v", err)
 		}
 		defer resp.Body.Close()
 
 		var respEntries ResponseEntries
 		err = json.NewDecoder(resp.Body).Decode(&respEntries)
 		if err != nil {
-			log.Fatalf("Could not JSON-decode a list of organization repositories from API: %v", err)
+			return fmt.Errorf("Could not JSON-decode a list of organization repositories from API: %v", err)
 		}
 
+		resp.Body.Close()
 		log.Printf("Received a list of %d repositories", len(respEntries))
 
 		if len(respEntries) == 0 {
@@ -125,7 +134,7 @@ func run() {
 
 	log.Printf("Fetched info of %d repositories in total", len(entries))
 
-	eg := errgroup.Group{}
+	eg, egCtx := errgroup.WithContext(ctx)
 	eg.SetLimit(8) // TODO(mmotyshen): get from config.
 
 	var failedRepos []string
@@ -139,9 +148,13 @@ func run() {
 		}
 
 		eg.Go(func() error {
+			ctx := egCtx
+			ctx, cancel := context.WithTimeout(ctx, time.Minute*30)
+			defer cancel()
+
 			parsedURL, err := url.Parse(itm.HtmlUrl)
 			if err != nil {
-				log.Fatalf("Could not parse a URL from %q: %v", itm.HtmlUrl, err)
+				return fmt.Errorf("Could not parse a URL from %q: %v", itm.HtmlUrl, err)
 			}
 
 			parsedURL.User = url.UserPassword("oauth2", bearerToken)
@@ -151,17 +164,17 @@ func run() {
 			localRepoPath := filepath.Join(storageLocation, itm.Name)
 			localRepoPathExists, err := pathExists(localRepoPath)
 			if err != nil {
-				log.Fatalf("Could not check if file path %q exists: %v", localRepoPath, err)
+				return fmt.Errorf("Could not check if file path %q exists: %v", localRepoPath, err)
 			}
 
 			var cmd *exec.Cmd
 			var operation string
 
 			if localRepoPathExists {
-				cmd = exec.Command("git", "-C", localRepoPath, "pull")
+				cmd = exec.CommandContext(ctx, "git", "-C", localRepoPath, "pull")
 				operation = "git pull"
 			} else {
-				cmd = exec.Command("git", "clone", augmentedURL, localRepoPath)
+				cmd = exec.CommandContext(ctx, "git", "clone", augmentedURL, localRepoPath)
 				operation = "git clone"
 			}
 
@@ -186,7 +199,7 @@ func run() {
 	}
 
 	if err := eg.Wait(); err != nil {
-		log.Fatalln(err)
+		return err
 	}
 
 	if len(failedRepos) == 0 {
@@ -199,6 +212,7 @@ func run() {
 		log.Printf("Cycle finished. %d of %d repositories were not processed succesfully:\n  - %s", len(failedRepos), len(entries), strings.Join(failedRepos, ",\n  - "))
 	}
 
+	return nil
 }
 
 func pathExists(path string) (bool, error) {
