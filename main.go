@@ -27,6 +27,8 @@ import (
 const (
 	apiAddress            = "https://api.github.com"
 	reposEndpointTemplate = "/orgs/%s/repos"
+
+	credentialsPath = "/run/secrets/git-credentials" // Personal access token will be stored here.
 )
 
 func main() {
@@ -35,6 +37,22 @@ func main() {
 
 	interval := time.Hour // TODO(mmotyshen): get from config.
 	log.Printf("Using an interval of %s between runs", interval)
+
+	_, err := runCmd(ctx, runCmdSpec{
+		name: "git",
+		args: []string{"config", "--global", "credential.helper", fmt.Sprintf("store --file=%s", credentialsPath)},
+	})
+	if err != nil {
+		log.Fatalf("Could not set global git credential helper: %s", err)
+	}
+
+	_, err = runCmd(ctx, runCmdSpec{
+		name: "mkdir",
+		args: []string{"-p", filepath.Dir(credentialsPath)},
+	})
+	if err != nil {
+		log.Fatalf("Could not set global git credential helper: %s", err)
+	}
 
 	for {
 		if ctxErr := ctx.Err(); ctxErr != nil {
@@ -72,6 +90,19 @@ func run(ctx context.Context) error {
 	bearerToken := os.Getenv("ACCESS_TOKEN")
 	if bearerToken == "" {
 		return fmt.Errorf("Access token unknown") // TODO(mmotyshen): hint to solution.
+	}
+
+	// Persisting the token to a file read by the credential manager, so that subsequent
+	// calls to `git clone` and `git fetch` don't prompt for username and password.
+	_, err := runCmd(ctx, runCmdSpec{
+		name: "sh",
+		args: []string{
+			"-c",
+			fmt.Sprintf("echo 'https://x-access-token:%s@github.com\n' > '%s'", bearerToken, credentialsPath),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("Could not update the token in %s: %w", credentialsPath, err)
 	}
 
 	storageLocation := os.Getenv("LOCAL_REPOSITORIES_DIR")
