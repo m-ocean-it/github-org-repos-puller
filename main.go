@@ -124,6 +124,11 @@ func run(ctx context.Context) error {
 		}
 		defer resp.Body.Close()
 
+		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			return fmt.Errorf("received a non-OK status-code from API (%d, %s)",
+				resp.StatusCode, http.StatusText(resp.StatusCode))
+		}
+
 		var respEntries ResponseEntries
 		err = json.NewDecoder(resp.Body).Decode(&respEntries)
 		if err != nil {
