@@ -221,7 +221,14 @@ func run(ctx context.Context) error {
 
 			if localRepoPathExists {
 				err = runGitFetchReset(ctx, localRepoPath)
-				operation = "git fetch+reset"
+				if err != nil {
+					if errors.Is(err, errBrokenRepo) {
+						err = runRemoveAndGitClone(ctx, augmentedURL, localRepoPath)
+						operation = "rm + git clone"
+					}
+				} else {
+					operation = "git fetch+reset"
+				}
 			} else {
 				err = runGitClone(ctx, augmentedURL, localRepoPath)
 				operation = "git clone"
@@ -276,6 +283,8 @@ func pathExists(path string) (bool, error) {
 	return false, err
 }
 
+var errBrokenRepo = errors.New("broken repo")
+
 func runGitFetchReset(ctx context.Context, repoPath string) error {
 	branch, err := runCmd(ctx, runCmdSpec{
 		dir:  repoPath,
@@ -283,6 +292,11 @@ func runGitFetchReset(ctx context.Context, repoPath string) error {
 		args: []string{"rev-parse", "--abbrev-ref", "HEAD"},
 	})
 	if err != nil {
+		exitErr, isExitErr := errors.AsType[*exec.ExitError](err)
+		if isExitErr && exitErr.ExitCode() == 128 && msgIsAboutBrokenRepo(string(exitErr.Stderr)) {
+			return fmt.Errorf("%w: %w", errBrokenRepo, err)
+		}
+
 		return fmt.Errorf("resolve current branch: %w", err)
 	}
 	branch = strings.TrimSpace(branch)
@@ -308,6 +322,21 @@ func runGitFetchReset(ctx context.Context, repoPath string) error {
 	return nil
 }
 
+func msgIsAboutBrokenRepo(msg string) bool {
+	targets := []string{
+		"fatal: ambiguous argument 'HEAD'",
+		"fatal: detected dubious ownership",
+	}
+
+	for _, t := range targets {
+		if strings.Contains(msg, t) {
+			return true
+		}
+	}
+
+	return false
+}
+
 func runGitClone(ctx context.Context, url string, destination string) error {
 	_, err := runCmd(ctx, runCmdSpec{
 		name: "git",
@@ -316,6 +345,34 @@ func runGitClone(ctx context.Context, url string, destination string) error {
 
 	if err != nil {
 		return fmt.Errorf("git clone: %w", err)
+	}
+
+	return nil
+}
+
+func runRemoveAndGitClone(ctx context.Context, url string, destination string) error {
+	err := runRemoveDir(ctx, destination)
+	if err != nil {
+		return fmt.Errorf("runRemoveDir: %w", err)
+	}
+
+	err = runGitClone(ctx, url, destination)
+	if err != nil {
+		return fmt.Errorf("runGitClone: %w", err)
+	}
+
+	return nil
+}
+
+// TODO(mmotyshen): Risk of data loss. Better to backup a dir before removing it.
+func runRemoveDir(ctx context.Context, path string) error {
+	_, err := runCmd(ctx, runCmdSpec{
+		name: "rm",
+		args: []string{"-rf", path},
+	})
+
+	if err != nil {
+		return fmt.Errorf("runCmd: %w", err)
 	}
 
 	return nil
@@ -338,7 +395,7 @@ func runCmd(ctx context.Context, spec runCmdSpec) (string, error) {
 			errMsg = strings.TrimSpace(string(stdErr.Stderr))
 		}
 
-		return "", fmt.Errorf("Could not run command %q: %s (%s)", cmd.String(), err, errMsg)
+		return "", fmt.Errorf("Could not run command %q: %w (%s)", cmd.String(), err, errMsg)
 	}
 
 	return string(out), nil
