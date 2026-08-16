@@ -134,6 +134,10 @@ func run(ctx context.Context) error {
 		return fmt.Errorf("Could not create an API URL for fetching organization repositories list: %v", err)
 	}
 
+	httpClient := &http.Client{
+		Timeout: time.Second * 10,
+	}
+
 	var entries ResponseEntries
 	for page := 1; ; page++ {
 		req, err := http.NewRequest("GET", fullURL, nil)
@@ -149,7 +153,7 @@ func run(ctx context.Context) error {
 		req.Header.Add("Authorization", "Bearer "+bearerToken)
 		req.Header.Add("X-GitHub-Api-Version", "2026-03-10")
 
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := httpClient.Do(req)
 		if err != nil {
 			return fmt.Errorf("Could not request organization repositories list: %v", err)
 		}
