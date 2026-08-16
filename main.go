@@ -224,18 +224,17 @@ func run(ctx context.Context) error {
 			var operation string
 
 			if localRepoPathExists {
+				operation = "git fetch+reset"
 				err = runGitFetchReset(ctx, localRepoPath)
 				if err != nil {
 					if errors.Is(err, errBrokenRepo) {
-						err = runRemoveAndGitClone(ctx, augmentedURL, localRepoPath)
 						operation = "rm + git clone"
+						err = runRemoveAndGitClone(ctx, augmentedURL, localRepoPath)
 					}
-				} else {
-					operation = "git fetch+reset"
 				}
 			} else {
-				err = runGitClone(ctx, augmentedURL, localRepoPath)
 				operation = "git clone"
+				err = runGitClone(ctx, augmentedURL, localRepoPath)
 			}
 
 			if err != nil {
