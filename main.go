@@ -94,6 +94,7 @@ func run(ctx context.Context) error {
 
 	// Persisting the token to a file read by the credential manager, so that subsequent
 	// calls to `git clone` and `git fetch` don't prompt for username and password.
+	// TODO(mmotyshen): remove dependency from a shell.
 	_, err := runCmd(ctx, runCmdSpec{
 		name: "sh",
 		args: []string{
