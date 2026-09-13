@@ -157,9 +157,10 @@ func run(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("Could not request organization repositories list: %v", err)
 		}
-		defer resp.Body.Close()
 
 		if resp.StatusCode < 200 || resp.StatusCode > 299 {
+			resp.Body.Close()
+
 			return fmt.Errorf("received a non-OK status-code from API (%d, %s)",
 				resp.StatusCode, http.StatusText(resp.StatusCode))
 		}
@@ -167,6 +168,8 @@ func run(ctx context.Context) error {
 		var respEntries ResponseEntries
 		err = json.NewDecoder(resp.Body).Decode(&respEntries)
 		if err != nil {
+			resp.Body.Close()
+
 			return fmt.Errorf("Could not JSON-decode a list of organization repositories from API: %v", err)
 		}
 
