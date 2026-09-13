@@ -210,15 +210,6 @@ func run(ctx context.Context) error {
 			ctx, cancel := context.WithTimeout(ctx, time.Minute*30)
 			defer cancel()
 
-			parsedURL, err := url.Parse(itm.HtmlUrl)
-			if err != nil {
-				return fmt.Errorf("Could not parse a URL from %q: %v", itm.HtmlUrl, err)
-			}
-
-			parsedURL.User = url.UserPassword("oauth2", bearerToken)
-
-			augmentedURL := parsedURL.String()
-
 			localRepoPath := filepath.Join(storageLocation, itm.Name)
 			localRepoPathExists, err := pathExists(localRepoPath)
 			if err != nil {
@@ -233,12 +224,12 @@ func run(ctx context.Context) error {
 				if err != nil {
 					if errors.Is(err, errBrokenRepo) {
 						operation = "rm + git clone"
-						err = runRemoveAndGitClone(ctx, augmentedURL, localRepoPath)
+						err = runRemoveAndGitClone(ctx, itm.HtmlUrl, localRepoPath)
 					}
 				}
 			} else {
 				operation = "git clone"
-				err = runGitClone(ctx, augmentedURL, localRepoPath)
+				err = runGitClone(ctx, itm.HtmlUrl, localRepoPath)
 			}
 
 			if err != nil {
