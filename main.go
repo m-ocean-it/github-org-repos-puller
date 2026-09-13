@@ -395,6 +395,20 @@ func runCmd(ctx context.Context, spec runCmdSpec) (string, error) {
 	cmd := exec.CommandContext(ctx, spec.name, spec.args...)
 	cmd.Dir = spec.dir
 
+	// Put the child (and its children) in their own process group.
+	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
+
+	// Give the process group time to exit cleanly before SIGKILL.
+	cmd.WaitDelay = 10 * time.Second
+
+	cmd.Cancel = func() error {
+		if cmd.Process != nil {
+			// Signal the whole process group (negative PID).
+			return syscall.Kill(-cmd.Process.Pid, syscall.SIGTERM)
+		}
+		return nil
+	}
+
 	out, err := cmd.Output()
 	if err != nil {
 		errMsg := "..."
